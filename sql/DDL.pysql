@@ -1,0 +1,74 @@
+-- Creates the required tables for the algorithm
+USE tip;
+
+DECLARE @this_is_dangerous_i_am_sure_that_i_want_to_do_this BIT = {danger};
+
+IF @this_is_dangerous_i_am_sure_that_i_want_to_do_this = 1
+BEGIN
+
+    PRINT 'Doing dangerous things!';
+
+    -- bayes_runs --------------------------------------------------------------
+    IF OBJECT_ID('dbo.bayes_runs', 'U') IS NOT NULL
+        DROP TABLE dbo.bayes_runs; 
+
+    CREATE TABLE dbo.bayes_runs (
+        id INT NOT NULL IDENTITY(1,1),
+        metadata VARCHAR(MAX) NOT NULL, -- JSON
+    );
+
+    ALTER TABLE dbo.bayes_runs
+    ADD CONSTRAINT PK_bayes_runs_id PRIMARY KEY (id);
+    ----------------------------------------------------------------------------
+    
+    -- bayes_authors -----------------------------------------------------------
+    IF OBJECT_ID('dbo.bayes_authors', 'U') IS NOT NULL
+      DROP TABLE dbo.bayes_authors; 
+
+    CREATE TABLE dbo.bayes_authors (
+        auid INT NOT NULL,
+        yr INT NOT NULL,
+        initial_score FLOAT NOT NULL,
+        final_score FLOAT NOT NULL,
+        is_seed TINYINT NOT NULL,
+        algo_run TINYINT NOT NULL,
+        run_id INT NOT NULL
+    );
+
+    ALTER TABLE dbo.bayes_authors
+    ADD CONSTRAINT PK_bayes_authors_auid_yr_run_id PRIMARY KEY (auid, yr, run_id);
+
+    ALTER TABLE dbo.bayes_authors
+    ADD CONSTRAINT FK_author_run FOREIGN KEY (run_id)
+    REFERENCES dbo.bayes_runs (id)
+
+    CREATE INDEX idx_bayes_authors_years ON dbo.bayes_authors (yr);
+    ----------------------------------------------------------------------------
+
+    -- bayes_eids --------------------------------------------------------------
+    IF OBJECT_ID('dbo.bayes_eids', 'U') IS NOT NULL
+      DROP TABLE dbo.bayes_eids; 
+
+    CREATE TABLE dbo.bayes_eids (
+        eid INT PRIMARY KEY,
+        yr INT NOT NULL,
+        run_id INT NOT NULL
+    );
+
+    ALTER TABLE dbo.bayes_eids
+    ADD CONSTRAINT PK_bayes_eids_eid_run_id PRIMARY KEY (eid, run_id);
+
+    CREATE INDEX idx_bayes_eids_years ON dbo.bayes_eids (yr);
+    
+    ALTER TABLE dbo.bayes_eids
+    ADD CONSTRAINT FK_eid_run FOREIGN KEY (run_id)
+    REFERENCES dbo.bayes_runs (id)
+    ----------------------------------------------------------------------------
+
+END
+ELSE
+BEGIN
+
+    PRINT 'No danger here!'
+
+END 

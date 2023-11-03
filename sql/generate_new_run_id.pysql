@@ -1,0 +1,5 @@
+USE tip;
+
+INSERT INTO dbo.bayes_runs (metadata) VALUES (
+    '{metadata}'
+);

@@ -1,0 +1,22 @@
+USE tip;
+
+DECLARE @year INT = {year};
+DECLARE @run_id INT = {run_id};
+
+-- create tmp table with entries from python using the 
+-- table name dbo.tmp_bayes_author_scores and it gets 
+
+IF NOT EXISTS (SELECT TOP 1 auid FROM dbo.bayes_authors WHERE yr=@year AND algo_run=1 AND run_id=@run_id)
+BEGIN
+    PRINT FORMATMESSAGE('Updating author scores for %i', @year);
+    UPDATE dbo.bayes_authors
+    SET 
+        final_score = t.final_score,
+        algo_run = 1
+    FROM dbo.bayes_authors b
+    INNER JOIN dbo.tmp_bayes_author_scores t ON b.auid=t.auid
+    WHERE b.yr = @year
+    AND b.run_id = @run_id
+END
+ELSE 
+    PRINT FORMATMESSAGE('Updated scores for %i already exist.', @year);

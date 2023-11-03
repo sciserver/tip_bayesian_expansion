@@ -1,0 +1,3 @@
+BULK INSERT dbo.tmp_bayes_author_scores FROM 
+'\\sciserver-fs1.idies.jhu.edu\vc\showusthedata\vc1\tip\ryan\bulk_tmp_bayes_{run_id}_{year}.bin' 
+WITH(DATAFILETYPE='native')

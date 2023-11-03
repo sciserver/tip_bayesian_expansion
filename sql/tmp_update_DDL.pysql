@@ -1,0 +1,9 @@
+IF OBJECT_ID('dbo.tmp_bayes_author_scores', 'U') IS NOT NULL
+      DROP TABLE dbo.tmp_bayes_author_scores; 
+
+CREATE TABLE [dbo].[tmp_bayes_author_scores](
+    [auid] [INT] NOT NULL,
+    [is_seed] [TINYINT] NOT NULL,
+    [initial_score] FLOAT(24) NOT NULL,
+    [final_score] FLOAT(24) NOT NULL,
+);

@@ -1,0 +1,167 @@
+USE tip;
+
+DECLARE @year INT = {year};
+DECLARE @threshold FLOAT = {threshold};
+DECLARE @run_id INT = {run_id};
+
+SET NOCOUNT ON
+
+-- Setup tmp tables ----------------------------------------------------
+IF OBJECT_ID('tempdb.dbo.#tmp_scopus_year', 'U') IS NOT NULL
+  DROP TABLE #tmp_scopus_year; 
+
+CREATE TABLE #tmp_scopus_year (
+	eid INT NOT NULL,
+	auid INT NOT NULL,
+	is_ml INT,
+);
+ALTER TABLE #tmp_scopus_year ADD PRIMARY KEY(eid, auid);
+
+IF OBJECT_ID('tempdb.dbo.#tmp_ml_authors', 'U') IS NOT NULL
+  DROP TABLE #tmp_ml_authors; 
+
+CREATE TABLE #tmp_ml_authors (
+	auid INT PRIMARY KEY,
+	is_seed INT,
+	score FLOAT,	
+);
+
+IF OBJECT_ID('tempdb.dbo.#tmp_coauthors', 'U') IS NOT NULL
+  DROP TABLE #tmp_coauthors; 
+
+CREATE TABLE #tmp_coauthors (
+	eid INT NOT NULL,
+	auid1 INT NOT NULL,
+	auid2 INT NOT NULL,
+);
+ALTER TABLE #tmp_coauthors ADD PRIMARY KEY(eid, auid1, auid2);
+
+IF OBJECT_ID('tempdb.dbo.#tmp_ml_eids', 'U') IS NOT NULL
+  DROP TABLE #tmp_ml_eids; 
+
+CREATE TABLE #tmp_ml_eids (
+	eid INT PRIMARY KEY,
+);
+
+IF OBJECT_ID('tempdb.dbo.#tmp_new_eids', 'U') IS NOT NULL
+  DROP TABLE #tmp_new_eids; 
+
+CREATE TABLE #tmp_new_eids (
+	eid INT PRIMARY KEY,
+);
+------------------------------------------------------------------------
+
+-- Get the seed data for the year along with the AI authors for the 
+-- previous year.
+
+PRINT FORMATMESSAGE('Getting data for %i', @year);
+
+INSERT INTO #tmp_scopus_year
+SELECT eid, auid, is_ml
+FROM scopus_{scopus_version}
+WHERE yr=@year;
+
+PRINT FORMATMESSAGE('%i scopus entries for %i', @@ROWCOUNT, @year);
+
+INSERT INTO #tmp_ml_authors (auid, is_seed, score)
+SELECT DISTINCT auid, 1 AS is_seed, 1.0 AS score
+FROM #tmp_scopus_year
+WHERE is_ml=1;
+
+PRINT FORMATMESSAGE('%i seed authors', @@ROWCOUNT);
+
+INSERT INTO #tmp_ml_authors (auid, is_seed, score)
+SELECT b.auid, 1 AS is_seed, b.final_score as score
+FROM dbo.bayes_authors b
+WHERE b.yr=(@year-1)
+AND b.final_score>=@threshold
+AND b.run_id=@run_id
+AND NOT EXISTS (SELECT TOP 1 t.auid FROM #tmp_ml_authors t WHERE t.auid=b.auid);
+
+PRINT FORMATMESSAGE('%i inherited authors from %i', @@ROWCOUNT, @year-1);
+
+INSERT INTO #tmp_ml_eids (eid)
+SELECT DISTINCT eid
+FROM #tmp_scopus_year
+WHERE is_ml=1;
+
+PRINT FORMATMESSAGE('%i seed eids', @@ROWCOUNT);
+
+-----------------------------------------------------------------------------
+
+-- clear values from a previous run or failure
+DELETE 
+FROM dbo.bayes_eids
+WHERE yr = @year
+AND run_id = @run_id;
+
+DELETE
+FROM dbo.bayes_authors
+WHERE yr = @year
+AND run_id = @run_id;
+
+DECLARE @new_added INT = 1;
+DECLARE @iter INT = 1;
+
+WHILE @new_added > 0
+BEGIN
+    INSERT INTO #tmp_new_eids
+    SELECT DISTINCT s.eid
+    FROM #tmp_scopus_year s
+    INNER JOIN #tmp_ml_authors t ON s.auid=t.auid
+    WHERE NOT EXISTS (SELECT TOP 1 eid FROM #tmp_ml_eids t WHERE s.eid=t.eid);
+
+    SET @new_added = @@ROWCOUNT;
+
+    INSERT INTO #tmp_ml_eids (eid)
+    SELECT eid
+    FROM #tmp_new_eids;
+
+
+    INSERT INTO #tmp_ml_authors
+    SELECT DISTINCT s.auid, 0 AS is_seed, 0.0 AS score
+    FROM #tmp_scopus_year s
+    INNER JOIN #tmp_new_eids e ON s.eid = e.eid
+    WHERE NOT EXISTS (SELECT TOP 1 tt.auid FROM #tmp_ml_authors tt WHERE tt.auid=s.auid);
+
+    PRINT FORMATMESSAGE('Iteration %i: %i new eids and %i new auids', @iter, @new_added, @@ROWCOUNT);
+    SET @iter = @iter + 1;
+
+    TRUNCATE TABLE #tmp_new_eids;
+END
+
+INSERT INTO dbo.bayes_authors (
+    auid,
+    yr,
+    initial_score,
+    final_score,
+    is_seed,
+    algo_run,
+    run_id
+)
+SELECT 
+    auid, 
+    @year AS yr, 
+    score AS initial_score,
+    0 AS final_score,
+    is_seed,
+    0 AS algo_run,
+    @run_id AS run_id
+FROM #tmp_ml_authors;
+
+PRINT FORMATMESSAGE('Added %i authors for year %i', @@ROWCOUNT, @year);
+
+INSERT INTO dbo.bayes_eids (
+    eid,
+    yr,
+    run_id
+)
+SELECT 
+    eid, 
+    @year AS yr, 
+    @run_id as run_id
+FROM #tmp_ml_eids;
+
+PRINT FORMATMESSAGE('Added %i eids for %i', @@ROWCOUNT, @year);
+
+SET NOCOUNT OFF;

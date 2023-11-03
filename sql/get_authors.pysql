@@ -1,0 +1,5 @@
+SELECT auid, is_seed, initial_score
+FROM dbo.bayes_authors
+WHERE yr={year}
+AND run_id={run_id}
+ORDER BY auid

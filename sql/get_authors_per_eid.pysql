@@ -1,0 +1,36 @@
+-- Setup tmp tables ----------------------------------------------------
+IF OBJECT_ID('tempdb.dbo.#tmp_scopus_year', 'U') IS NOT NULL
+  DROP TABLE #tmp_scopus_year; 
+
+
+CREATE TABLE #tmp_scopus_year (
+    eid INT NOT NULL,
+    auid INT NOT NULL,
+    is_ml INT,
+);
+ALTER TABLE #tmp_scopus_year ADD PRIMARY KEY(eid, auid);
+-------------------------------------------------------------------------
+
+INSERT INTO #tmp_scopus_year
+SELECT eid, auid, is_ml
+FROM dbo.scopus_{scopus_version} 
+WHERE yr={year};
+
+-- https://stackoverflow.com/a/21875820/2691018
+SELECT
+t1.eid
+    ,STUFF(
+        (SELECT
+            ', ' + CONVERT(NVARCHAR(10), t2.auid)
+            FROM #tmp_scopus_year t2
+            WHERE t1.eid=t2.eid
+            ORDER BY t2.auid
+            FOR XML PATH(''), TYPE
+        ).value('.','varchar(max)')
+        ,1,2, ''
+    ) AS auids
+FROM #tmp_scopus_year t1
+INNER JOIN dbo.bayes_eids b ON t1.eid=b.eid
+WHERE b.yr={year}
+AND b.run_id={run_id}
+GROUP BY t1.eid
