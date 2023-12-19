@@ -1,0 +1,54 @@
+/* MIT LICENSE
+* COPYRIGHT 2023 Institute for Data Intensive Engineering and Science, JHU
+*
+* params are intended to be replaced via python string interpolation
+*
+* Params:
+*   year: the year to get the data for
+*   run_id: the id of the run
+*
+* Returns:
+*   a table with the following columns:
+*     eid (int): the scopus id of the paper
+*     auids (str): a comma separated list of author ids
+*/
+
+-- Setup tmp tables ----------------------------------------------------
+IF OBJECT_ID('tempdb.dbo.#tmp_scopus_year', 'U') IS NOT NULL
+  DROP TABLE #tmp_scopus_year;
+
+
+CREATE TABLE #tmp_scopus_year (
+    eid INT NOT NULL,
+    auid INT NOT NULL,
+);
+ALTER TABLE #tmp_scopus_year ADD PRIMARY KEY(eid, auid);
+-------------------------------------------------------------------------
+
+INSERT INTO #tmp_scopus_year
+SELECT eid, auid
+FROM bayes_exp_v1.scopus
+WHERE yr={year};
+
+-- This piece of magic converts the auids over rows into a comma separated
+-- list of auids per eid. There, I think, is a better way to do this, but
+-- on the version of SQL Server we are using, this is the best way I could
+-- find.
+-- https://stackoverflow.com/a/21875820/2691018
+SELECT
+t1.eid
+    ,STUFF(
+        (SELECT
+            ', ' + CONVERT(NVARCHAR(10), t2.auid)
+            FROM #tmp_scopus_year t2
+            WHERE t1.eid=t2.eid
+            ORDER BY t2.auid
+            FOR XML PATH(''), TYPE
+        ).value('.','varchar(max)')
+        ,1,2, ''
+    ) AS auids
+FROM #tmp_scopus_year t1
+INNER JOIN bayes_exp_v1.selected_eids s ON t1.eid=s.eid
+WHERE s.yr={year}
+AND s.run_id={run_id}
+GROUP BY t1.eid

@@ -1,0 +1,10 @@
+/* MIT LICENSE
+* COPYRIGHT 2023 Institute for Data Intensive Engineering and Science, JHU
+*
+* Returns the largest id in the runs table, used to track run data
+*/
+
+USE tip;
+
+SELECT MAX(id)
+FROM bayes_exp_v1.runs

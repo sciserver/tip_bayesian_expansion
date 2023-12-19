@@ -1,0 +1,17 @@
+/* MIT LICENSE
+* COPYRIGHT 2023 Institute for Data Intensive Engineering and Science, JHU
+*
+* Creates the tmp_author_scores table to store the output from the model
+* that will be merged with the author_scores table. It's used for bulk insert
+*/
+
+
+IF OBJECT_ID('bayes_exp_v1.tmp_author_scores', 'U') IS NOT NULL
+      DROP TABLE bayes_exp_v1.tmp_author_scores;
+
+CREATE TABLE [bayes_exp_v1].[tmp_author_scores](
+    [auid] [INT] NOT NULL,
+    [is_seed] [TINYINT] NOT NULL,
+    [initial_score] FLOAT(24) NOT NULL,
+    [final_score] FLOAT(24) NOT NULL,
+);

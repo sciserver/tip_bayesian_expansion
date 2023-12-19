@@ -1,0 +1,27 @@
+/* MIT LICENSE
+* COPYRIGHT 2023 Institute for Data Intensive Engineering and Science, JHU
+*
+* params are intended to be replaced via python string interpolation
+*
+* Params:
+*   year: the year to get the data for
+*   run_id: the id of the run
+*
+* Returns:
+*   a table with the following columns:
+*     auid (int): the author id
+*     is_seed (int): whether or not the author is a seed author (1 = yes, 0 = no)
+*     initial_score (float): the initial score for the author (0 <= score <= 1)
+*/
+
+USE tip;
+
+SELECT
+    auid,
+    is_seed,
+    initial_score
+FROM bayes_exp_v1.author_scores
+WHERE yr={year}
+AND run_id={run_id}
+ORDER BY auid
+

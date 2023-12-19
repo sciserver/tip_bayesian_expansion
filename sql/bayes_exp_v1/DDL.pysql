@@ -1,0 +1,126 @@
+-- Creates the required tables for the first version of the bayesian expansion
+-- algorithm. This differs from the dbo schema in that we need to support
+-- multiple target fields of study and a different data delivery format
+
+USE tip;
+
+DECLARE @this_is_dangerous_i_am_sure_that_i_want_to_do_this BIT = {danger};
+
+IF @this_is_dangerous_i_am_sure_that_i_want_to_do_this = 1
+BEGIN
+
+    PRINT 'Doing dangerous things!';
+
+    -- selected_eids -----------------------------------------------------------
+    IF OBJECT_ID('bayes_exp_v1.selected_eids', 'U') IS NOT NULL
+        DROP TABLE bayes_exp_v1.selected_eids;
+
+    CREATE TABLE bayes_exp_v1.selected_eids (
+        eid INT NOT NULL,
+        yr INT NOT NULL,
+        run_id INT NOT NULL,
+    );
+
+    ALTER TABLE bayes_exp_v1.selected_eids
+    ADD CONSTRAINT PK_selected_eids_eid_yr_run_id PRIMARY KEY (eid, run_id);
+
+    CREATE INDEX idx_selected_eids_years ON bayes_exp_v1.selected_eids (yr);
+    ----------------------------------------------------------------------------
+
+
+    -- author_scores -----------------------------------------------------------
+    IF OBJECT_ID('bayes_exp_v1.author_scores', 'U') IS NOT NULL
+        DROP TABLE bayes_exp_v1.author_scores;
+
+    CREATE TABLE bayes_exp_v1.author_scores (
+        auid INT NOT NULL,
+        yr INT NOT NULL,
+        score FLOAT NOT NULL,
+        is_seed TINYINT NOT NULL,
+        algo_run TINYINT NOT NULL,
+        run_id INT NOT NULL,
+    );
+
+    ALTER TABLE bayes_exp_v1.author_scores
+    ADD CONSTRAINT PK_author_scores_auid_yr_run_id PRIMARY KEY (auid, yr, run_id);
+
+    CREATE INDEX idx_author_scores_years ON bayes_exp_v1.author_scores (yr);
+    ----------------------------------------------------------------------------
+
+
+    -- runs --------------------------------------------------------------------
+    IF OBJECT_ID('bayes_exp_v1.runs', 'U') IS NOT NULL
+        DROP TABLE bayes_exp_v1.runs;
+
+    CREATE TABLE bayes_exp_v1.runs (
+        id INT NOT NULL IDENTITY(1,1),
+        field_id INT NOT NULL,
+        metadata VARCHAR(MAX) NOT NULL, -- JSON
+    );
+
+    ALTER TABLE bayes_exp_v1.runs
+    ADD CONSTRAINT PK_runs_id PRIMARY KEY (id);
+    ----------------------------------------------------------------------------
+
+
+    -- seed_authors ------------------------------------------------------------
+    IF OBJECT_ID('bayes_exp_v1.seed_authors', 'U') IS NOT NULL
+        DROP TABLE bayes_exp_v1.seed_authors;
+
+    CREATE TABLE bayes_exp_v1.seed_authors (
+        auid INT NOT NULL,
+        field_id INT NOT NULL,
+        yr INT NOT NULL,
+        version INT NOT NULL,
+    );
+
+    ALTER TABLE bayes_exp_v1.seed_authors
+    ADD CONSTRAINT PK_seed_authors_auid_field_id PRIMARY KEY (auid, field_id, yr, version);
+
+    ----------------------------------------------------------------------------
+
+
+    -- fields ------------------------------------------------------------------
+    IF OBJECT_ID('bayes_exp_v1.fields', 'U') IS NOT NULL
+        DROP TABLE bayes_exp_v1.fields;
+
+    CREATE TABLE bayes_exp_v1.fields (
+        id INT NOT NULL IDENTITY(1,1),
+        name VARCHAR(255) NOT NULL,
+    );
+
+    ALTER TABLE bayes_exp_v1.fields
+    ADD CONSTRAINT PK_fields_id PRIMARY KEY (id);
+
+    -- Insert the fields of study we are interested in
+    INSERT INTO bayes_exp_v1.fields (name)
+    VALUES ('ai'), ('ev');
+    ----------------------------------------------------------------------------
+
+
+    -- Foreign keys ------------------------------------------------------------
+    ALTER TABLE bayes_exp_v1.runs
+    ADD CONSTRAINT FK_runs_field_id FOREIGN KEY (field_id)
+    REFERENCES bayes_exp_v1.fields (id);
+
+    ALTER TABLE bayes_exp_v1.seed_authors
+    ADD CONSTRAINT FK_seed_authors_field_id FOREIGN KEY (field_id)
+    REFERENCES bayes_exp_v1.fields (id);
+
+    ALTER TABLE bayes_exp_v1.author_scores
+    ADD CONSTRAINT FK_author_run FOREIGN KEY (run_id)
+    REFERENCES bayes_exp_v1.runs (id)
+
+    ALTER TABLE bayes_exp_v1.selected_eids
+    ADD CONSTRAINT FK_selected_eids_run FOREIGN KEY (run_id)
+    REFERENCES bayes_exp_v1.runs (id)
+    ----------------------------------------------------------------------------
+
+
+END
+ELSE
+BEGIN
+
+    PRINT 'No danger here!'
+
+END

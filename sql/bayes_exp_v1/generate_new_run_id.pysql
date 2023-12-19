@@ -1,0 +1,5 @@
+USE tip;
+
+INSERT INTO bayes_exp_v1.bayes_runs (metadata) VALUES (
+    '{metadata}'
+);

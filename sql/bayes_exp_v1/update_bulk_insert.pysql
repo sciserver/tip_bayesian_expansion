@@ -1,0 +1,12 @@
+/* MIT LICENSE
+* COPYRIGHT 2023 Institute for Data Intensive Engineering and Science, JHU
+*
+* Bulk insert of the results of the algorithm into the tmp_author_scores table
+* for merging with the author_scores table in a later step
+*/
+
+USE tip;
+
+BULK INSERT bayes_exp_v1.tmp_author_scores FROM
+'\\sciserver-fs1.idies.jhu.edu\vc\showusthedata\vc1\tip\ryan\bulk_insert\bulk_data_{run_id}_{year}.bin'
+WITH(DATAFILETYPE='native')

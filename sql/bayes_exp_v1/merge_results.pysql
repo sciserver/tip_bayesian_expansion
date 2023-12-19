@@ -1,0 +1,35 @@
+/* MIT LICENSE
+* COPYRIGHT 2023 Institute for Data Intensive Engineering and Science, JHU
+*
+* Merges the outputs from the algorithm with the author_scores table
+*
+* params are intended to be replaced via python string interpolation
+*
+* Params:
+*  year: the year to calculate updates for
+*  run_id: the id of the run to work with
+*
+* Returns:
+*   None
+*/
+
+USE tip;
+
+DECLARE @year INT = {year};
+DECLARE @run_id INT = {run_id};
+
+-- If the algorithm has already been run for this year, don't run it again
+IF NOT EXISTS (SELECT TOP 1 auid FROM bayes_exp_v1.author_scores WHERE yr=@year AND algo_run=1 AND run_id=@run_id)
+BEGIN
+    PRINT FORMATMESSAGE('Updating author scores for %i', @year);
+    UPDATE bayes_exp_v1.author_scores
+    SET
+        score = t.final_score,
+        algo_run = 1
+    FROM bayes_exp_v1.author_scores b
+    INNER JOIN bayes_exp_v1.tmp_author_scores t ON b.auid=t.auid
+    WHERE b.yr = @year
+    AND b.run_id = @run_id
+END
+ELSE
+    PRINT FORMATMESSAGE('Updated scores for %i already exist.', @year);

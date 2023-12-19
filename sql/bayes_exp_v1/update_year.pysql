@@ -1,0 +1,209 @@
+/* MIT LICENSE
+* COPYRIGHT 2023 Institute for Data Intensive Engineering and Science, JHU
+*
+* Prepares the data for computing the classifications in the v1 Bayesian
+* expansion algorithm. This is the first step in the algorithm.
+*
+* params are intended to be replaced via python string interpolation
+*
+* Params:
+*  year: the year to prepare data for
+*  threshold: the threshold for the previous year's scores that determine
+*             whether or not an author is considered to be a seed author
+*  run_id: the id of the run to work with
+*  scopus_version: the version of scopus to use, there are stored in the
+*                  scopus_# tables in the dbo schema
+*  seed_version: the version of the seed authors to use, there are stored in the
+*                bayes_exp_v1.seed_authors
+*
+* Returns:
+*   None
+*/
+
+USE tip;
+
+DECLARE @year INT = {year};
+DECLARE @threshold FLOAT = {threshold};
+DECLARE @run_id INT = {run_id};
+
+SET NOCOUNT ON
+
+-- Setup tmp tables ------------------------------------------------------------
+IF OBJECT_ID('tempdb.dbo.#tmp_scopus_year', 'U') IS NOT NULL
+  DROP TABLE #tmp_scopus_year;
+
+CREATE TABLE #tmp_scopus_year (
+	eid INT NOT NULL,
+	auid INT NOT NULL,
+);
+ALTER TABLE #tmp_scopus_year ADD PRIMARY KEY(eid, auid);
+
+IF OBJECT_ID('tempdb.dbo.#tmp_ml_authors', 'U') IS NOT NULL
+  DROP TABLE #tmp_ml_authors;
+
+CREATE TABLE #tmp_ml_authors (
+	auid INT PRIMARY KEY,
+	is_seed INT,
+	score FLOAT,
+);
+
+IF OBJECT_ID('tempdb.dbo.#tmp_coauthors', 'U') IS NOT NULL
+  DROP TABLE #tmp_coauthors;
+
+CREATE TABLE #tmp_coauthors (
+	eid INT NOT NULL,
+	auid1 INT NOT NULL,
+	auid2 INT NOT NULL,
+);
+ALTER TABLE #tmp_coauthors ADD PRIMARY KEY(eid, auid1, auid2);
+
+IF OBJECT_ID('tempdb.dbo.#tmp_field_eids', 'U') IS NOT NULL
+  DROP TABLE #tmp_field_eids;
+
+CREATE TABLE #tmp_field_eids (
+	eid INT PRIMARY KEY,
+);
+
+IF OBJECT_ID('tempdb.dbo.#tmp_new_eids', 'U') IS NOT NULL
+  DROP TABLE #tmp_new_eids;
+
+CREATE TABLE #tmp_new_eids (
+	eid INT PRIMARY KEY,
+);
+--------------------------------------------------------------------------------
+
+
+-- Get the eids/auids for the year we're working with --------------------------
+PRINT FORMATMESSAGE('Getting data for %i', @year);
+
+INSERT INTO #tmp_scopus_year
+SELECT eid, auid
+FROM dbo.scopus_{scopus_version}
+WHERE yr=@year;
+
+PRINT FORMATMESSAGE('%i scopus entries for %i', @@ROWCOUNT, @year);
+--------------------------------------------------------------------------------
+
+
+-- Get the known seed authors for the year we're working with and merge them ---
+-- with seed authors and classified authors from the previous year.
+WITH known_seed_authors AS (
+    SELECT
+        auid,
+        yr,
+        1.0 AS score
+    FROM bayes_exp_v1.seed_authors
+    WHERE yr=@year
+    AND version={version}
+    AND field_id=(SELECT field_id from bayes_exp_v1.runs WHERE id=@run_id)
+),
+
+previous_year_seed_authors AS (
+    SELECT auid, yr, score
+    FROM bayes_exp_v1.author_scores
+    WHERE yr=(@year-1)
+    AND (
+        score>=@threshold
+        OR
+        is_seed=1
+    )
+)
+
+INSERT INTO #tmp_field_authors (auid, is_seed, score)
+SELECT
+    auid,
+    1 AS is_seed,
+    MAX(k.score, p.score) AS score
+FROM known_seed_authors k
+FULL OUTER JOIN previous_year_seed_authors p
+ON k.auid=p.auid
+GROUP BY auid;
+
+PRINT FORMATMESSAGE('%i seed authors', @@ROWCOUNT);
+--------------------------------------------------------------------------------
+
+
+-- if somehow we have run the same year twice, we need to delete the old data --
+DELETE FROM bayes_exp_v1.author_scores
+WHERE yr=@year AND run_id=@run_id;
+
+DELETE DISTINCT FROM bayes_exp_v1.selected_eids
+WHERE yr=@year AND run_id=@run_id;
+
+DECLARE @new_added INT = 1;
+DECLARE @iter INT = 1;
+--------------------------------------------------------------------------------
+
+
+-- build out the coauthorship network ------------------------------------------
+WHILE @new_added > 0
+BEGIN
+    -- First, get the new eids the current set of authors
+    INSERT INTO #tmp_new_eids
+    SELECT DISTINCT s.eid
+    FROM #tmp_scopus_year s
+    INNER JOIN #tmp_field_authors t ON s.auid=t.auid
+    WHERE NOT EXISTS (SELECT TOP 1 eid FROM #tmp_field_eids WHERE eid=s.eid);
+
+    SET @new_added = @@ROWCOUNT;
+
+    INSERT INTO #tmp_field_eids (eid)
+    SELECT eid
+    FROM #tmp_new_eids;
+
+    -- Next, get the coauthors for the new eids
+    INSERT INTO #tmp_field_authors (auid, is_seed, score)
+    SELECT
+        s.auid,
+        0 AS is_seed,
+        0.0 AS score
+    FROM #tmp_scopus_year s
+    INNER JOIN #tmp_new_eids t ON s.eid=t.eid
+    WHERE NOT EXISTS (SELECT TOP 1 auid FROM #tmp_field_authors WHERE auid=s.auid);
+
+    PRINT FORMATMESSAGE('Iteration %i: %i new eids and %i new auids', @iter, @new_added, @@ROWCOUNT);
+    SET @iter = @iter + 1;
+
+    -- truncate the new eids table for the next iteration
+    TRUNCATE TABLE #tmp_new_eids;
+END
+-------------------------------------------------------------------------------
+
+-- populate the author scores table for the year we're working with ------------
+INSERT INTO bayes_exp_v1.author_scores (
+    auid,
+    yr,
+    score,
+    is_seed,
+    algo_run,
+    run_id
+)
+SELECT
+    auid,
+    @year AS yr,
+    score AS initial_score,
+    is_seed,
+    0 AS algo_run,
+    @run_id AS run_id
+FROM #tmp_field_authors;
+
+PRINT FORMATMESSAGE('Added %i authors for year %i', @@ROWCOUNT, @year);
+--------------------------------------------------------------------------------
+
+
+-- populate the selected eids table for the year we're working with ------------
+INSERT INTO bayes_exp_v1.selected_eids (
+    eid,
+    yr,
+    run_id
+)
+SELECT
+    eid,
+    @year AS yr,
+    @run_id as run_id
+FROM #tmp_field_eids;
+
+PRINT FORMATMESSAGE('Added %i eids for %i', @@ROWCOUNT, @year);
+--------------------------------------------------------------------------------
+
+SET NOCOUNT OFF;
